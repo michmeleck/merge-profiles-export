@@ -134,6 +134,26 @@ internal note with URLs for that creator:
   `merge_{contact_name}_{YYYY-MM-DD}.csv` — never combine Type 2 tickets together or
   with the Type 1 CSV.
 
+### Known issue: Intercom attachment CDN is egress-blocked
+
+As of 2026-08-11, this environment's network egress policy blocks
+`*.intercom-attachments-*.com`, so a normal attachment download for a Type 2
+ticket will fail (curl and WebFetch both hit the same org-level 403 —
+don't retry it, and don't spend time trying alternate download paths). Until
+someone allowlists that domain, Type 2 attachments have to be hand-delivered
+into this repo by a teammate instead.
+
+**Pending fallback file — remove this whole subsection once used:**
+- `pending-attachments/james_akinaka_merge_template.csv` — hand-delivered by
+  Michelle on 2026-08-11 for an upcoming "Merge profiles" conversation from
+  contact **James Akinaka** that hadn't arrived in Intercom yet at the time.
+- When a run finds a Type 2 conversation from James Akinaka whose attachment
+  can't be downloaded, use this file's contents in place of the blocked
+  download instead of flagging it as unreadable.
+- After that ticket is processed, delete `pending-attachments/james_akinaka_merge_template.csv`
+  and this subsection so a future unrelated James Akinaka ticket doesn't
+  wrongly get matched against stale data.
+
 ## 5. CSV format — exact headers, in order
 
 ```
