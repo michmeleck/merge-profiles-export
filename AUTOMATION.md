@@ -123,6 +123,11 @@ internal note with URLs for that creator:
 
 ## 2b. Type 3 handling — merge blank profile
 
+**Mexico leg only, for now.** This is a trial of the Type 3 auto-ticket flow — on
+the Lyon leg, still just flag a detected Type 3 case in the Slack summary per
+section 6 (don't file a ticket). Revisit this restriction once there's feedback on
+how the Mexico-leg tickets are landing.
+
 Recognize a Type 3 case by the shape of the conversation, not by a keyword: a
 customer message (in-window) says a creator's profile shows no linked social /
 can't be found on Upfluence, and — either in the same window or via a teammate
@@ -143,6 +148,7 @@ For each Type 3 case found:
    - Labels: `ICP`, `Service`
    - Priority: High
    - Assignee: none (unassigned)
+   - State: Triage (not Backlog)
    - Description, mirroring this exact shape:
      ```
      ## Description
