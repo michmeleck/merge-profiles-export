@@ -97,6 +97,10 @@ general) are cosmetic only.
 
 - **Type 1**: creator/social links pasted directly into a message.
 - **Type 2**: client attached a CSV/Excel file.
+- **Type 3**: client reports an existing Upfluence profile has gone blank (lost its
+  linked social account, e.g. because the creator changed handle or made security
+  changes) and shares the replacement social URL for that SAME creator. This is a
+  merge-blank-profile request, not new creator data — handle it per 2b, not per 3/4.
 
 Only extract from CUSTOMER messages sent within the window — ignore older messages
 in the same thread (handled by a prior run).
@@ -116,6 +120,55 @@ internal note with URLs for that creator:
 - No matching note → default handling: zero links referenced → no CSV row, still
   list conversation in "touched"; one link with no more-complete note → flag
   "only one link sent — follow-up needed" per section 6.
+
+## 2b. Type 3 handling — merge blank profile
+
+**Mexico leg only, for now.** This is a trial of the Type 3 auto-ticket flow — on
+the Lyon leg, still just flag a detected Type 3 case in the Slack summary per
+section 6 (don't file a ticket). Revisit this restriction once there's feedback on
+how the Mexico-leg tickets are landing.
+
+Recognize a Type 3 case by the shape of the conversation, not by a keyword: a
+customer message (in-window) says a creator's profile shows no linked social /
+can't be found on Upfluence, and — either in the same window or via a teammate
+follow-up already in the thread — the customer provides the existing Upfluence
+profile URL (`https://software.upfluence.co/irm/influencers/{id}`) and the
+creator's current social URL to merge it with. A teammate note pinning down the
+profile ID and social URL (like the fallback in 2a) counts as having the data even
+if the customer never typed the profile URL themselves.
+
+For each Type 3 case found:
+1. Pull the contact's email and Upfluence User ID from the conversation's contact
+   info (`email`, `external_id`).
+2. Pull the company/team name from the conversation's company info for the ticket
+   title.
+3. File a Linear issue immediately (don't wait for a separate step or batch it):
+   - Team: Support (`3f272a17-cc3b-4e90-b74d-16fac7701c18`)
+   - Title: `Merge blank profile - {Company name}`
+   - Labels: `ICP`, `Service`
+   - Priority: High
+   - Assignee: none (unassigned)
+   - State: Triage (not Backlog)
+   - Description, mirroring this exact shape:
+     ```
+     ## Description
+
+     Client is asking us to merge a blank creator profile with their new social media account:
+
+     1. Blank profile: [{profile_url}]({profile_url}) → merge with: [{social_url}]({social_url})
+
+     ## Account information
+
+     * Email: {email}
+     * User ID: {user_id}
+     ```
+   - Attach/link the Intercom conversation URL to the issue.
+4. This conversation counts as "touched" for the 1a scope check and belongs in the
+   Slack "touched" list, but it does NOT go into either CSV — it produces a Linear
+   ticket, not a CSV row.
+5. In the Slack summary (section 8), add one line per Type 3 case:
+   `Type 3 (blank profile): {Contact name} → {Linear issue ID}` linking the issue ID
+   to its Linear URL.
 
 ## 3. Type 1 extraction rules
 
@@ -163,6 +216,7 @@ Post to **#merge-automation** (channel ID `C0BJJFZLRA6`) in this exact format:
 _Merge profiles export ({leg label}) — {window start} → {actual run time} {weekday} {date}_
 Type 1 (links): {N} conversations → {M} creators → [merge_{date}.csv](drive_link)
 Type 2 (files): {N} file from {contact name} → reviewed & reformatted → [merge_{contact}_{date}.csv](drive_link)
+Type 3 (blank profile): {contact name} → [{Linear issue ID}](linear_link)
 ⚠️ Flags:
 - {Contact name} sent a {platform} link — needs follow up
 - {Contact name}'s file had unreadable format ({format}) — skipped
@@ -173,7 +227,7 @@ Type 2 (files): {N} file from {contact name} → reviewed & reformatted → [mer
   `{actual run time} {weekday} {date}` = the real current time/day/date, pulled live,
   never hardcoded.
 - Include a Type 1 line only if Type 1 tickets exist; one Type 2 line per Type 2
-  ticket only if any exist.
+  ticket only if any exist; one Type 3 line per Type 3 case only if any exist.
 - If flags exist, list them under `⚠️ Flags:`. If none:
   `⚠️ No flags gathered in this attempt` (italicized).
 - End with an italicized line: `_Don't forget to add notes in tickets:_` followed by
