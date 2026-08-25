@@ -7,35 +7,43 @@ hand-edit of the trigger UI.
 
 ## Schedule
 
-Two anchors, both weekdays only:
-- **Lyon leg**: 3:50pm Lyon local time (CEST = UTC+2, or CET = UTC+1 — whichever is
-  currently in effect).
-- **Mexico leg**: 3:50pm Mexico City time, fixed UTC-6, no DST.
+One trigger, one cron, two anchors, both weekdays only — cron `58 13,21 * * 1-5`:
+- **Lyon leg**: 13:58 UTC — 3:58pm Lyon local time (CEST = UTC+2, or CET = UTC+1,
+  whichever is currently in effect; shifts to 14:58 UTC on CET).
+- **Mexico leg**: 21:58 UTC fixed — 3:58pm Mexico City time, UTC-6, no DST. This
+  value must never change.
 
-Always label the run "4 PM Run" in the Slack summary regardless of leg, to avoid
-confusing the team with an odd time. This label is cosmetic only — never let it
-change the actual search-window math below.
+Always label the run "4 PM Run" / "4pm" in the Slack summary regardless of leg, to
+avoid confusing the team with an odd time. This label is cosmetic only — never let
+it change the actual search-window math below.
 
 ## 0. Determine which leg this is (do first, silently — no Slack mention)
 
 Check the UTC hour this run fired at:
-- Hour 21 → **Mexico leg** ("Mexico 4 PM Run").
-- Hour 13 or 14 → **Lyon leg** ("Lyon 4 PM Run").
+- Hour 21 → **Mexico leg** ("Mexico 4 PM Run", target 3:58pm Mexico City time).
+- Hour 13 or 14 → **Lyon leg** ("Lyon 4 PM Run", target 3:58pm Lyon local time).
 
-## 0a. Lyon DST self-check (Lyon leg only; silent; skip on Mexico leg)
+## 0a. Lyon DST self-check (Lyon leg only; silent; skip entirely on Mexico leg)
 
-Determine today's actual Lyon UTC offset. If the trigger's configured Lyon-leg hour
-doesn't match (Lyon crossed a DST boundary since this last ran), the trigger's
-schedule needs correcting to the new hour (13 for CEST, 14 for CET) — the Mexico
-leg's hour stays fixed. This must currently be done manually in the trigger's
-schedule UI; there is no tool access from within a run to edit the trigger itself.
+The cron's first value is `13` (CEST, UTC+2) or should be `14` (CET, UTC+1).
+Determine today's actual Lyon UTC offset. If it doesn't match what the stored
+cron's first hour value assumes (Lyon crossed a DST boundary since this last ran),
+the trigger's cron needs correcting to `58 14,21 * * 1-5` (CET) or
+`58 13,21 * * 1-5` (CEST) — keep the second value fixed at `21` (Mexico leg). This
+must currently be done manually in the trigger's schedule UI; there is no tool
+access from within a run to edit the trigger itself. This is routine housekeeping —
+do not mention it in the Slack post.
 
 ## 1. Search Intercom efficiently
 
 Call `search_conversations` with ALL of these filters in the SAME call:
 - `tag_ids: ["10855456"]` — the "Merge profiles" tag ID. Do NOT search by tag name/text
   — the search DSL's `tag` field doesn't exist. This ID narrows results server-side to
-  the real matches instead of the whole team queue.
+  the real matches instead of the whole team queue. If a search using this ID ever
+  comes back empty/suspicious across both states, double-check by fetching one known
+  "Merge profiles" conversation and confirming its tag id still reads `10855456`
+  (tag IDs are workspace-specific and would only change if the tag were deleted and
+  recreated).
 - `team_assignee_id: 5131095`
 - `state: "open"`, then repeat with `state: "snoozed"` (the tool takes one state per call).
 
@@ -84,10 +92,11 @@ not list it in the Slack "touched" line.
 
 ## Window definitions
 
-- **Mexico leg:** since today 3:50pm Lyon time until now. Slack label: "today 4pm Lyon".
-- **Lyon leg, Monday:** since last Friday 3:50pm Mexico City time until now (covers
-  the weekend backlog). Slack label: "last Friday 4pm Mexico".
-- **Lyon leg, Tue–Fri:** since yesterday 3:50pm Mexico City time until now. Slack
+- **Mexico leg:** since today 3:58pm Lyon time (whichever of CEST/CET currently
+  applies) until now — i.e. since today's Lyon-leg run. Slack label: "today 4pm Lyon".
+- **Lyon leg, Monday:** since last Friday 3:58pm Mexico City time until now (covers
+  the weekend backlog — no runs Sat/Sun). Slack label: "last Friday 4pm Mexico".
+- **Lyon leg, Tue–Fri:** since yesterday 3:58pm Mexico City time until now. Slack
   label: "yesterday 4pm Mexico".
 
 These anchors are the real computation boundaries; the display labels (and "4pm" in
@@ -99,7 +108,7 @@ general) are cosmetic only.
 - **Type 2**: client attached a CSV/Excel file.
 - **Type 3**: client reports an existing Upfluence profile has gone blank (lost its
   linked social account, e.g. because the creator changed handle or made security
-  changes) and shares the replacement social URL for that SAME creator. This is a
+  changes) and shares the replacement social URL(s) for that SAME creator. This is a
   merge-blank-profile request, not new creator data — handle it per 2b, not per 3/4.
 
 Only extract from CUSTOMER messages sent within the window — ignore older messages
@@ -121,54 +130,89 @@ internal note with URLs for that creator:
   list conversation in "touched"; one link with no more-complete note → flag
   "only one link sent — follow-up needed" per section 6.
 
-## 2b. Type 3 handling — merge blank profile
+## 2b. Type 3 handling — merge blank profile (Mexico leg only)
 
-**Mexico leg only, for now.** This is a trial of the Type 3 auto-ticket flow — on
-the Lyon leg, still just flag a detected Type 3 case in the Slack summary per
-section 6 (don't file a ticket). Revisit this restriction once there's feedback on
-how the Mexico-leg tickets are landing.
+**Mexico leg only, for now.** This is a trial of the Type 3 auto-ticket flow — skip
+this section entirely on the Lyon leg: do not check for it, and do not mention it
+in the Slack post for a Lyon-leg run. Revisit this restriction once there's
+feedback on how the Mexico-leg tickets are landing.
 
-Recognize a Type 3 case by the shape of the conversation, not by a keyword: a
-customer message (in-window) says a creator's profile shows no linked social /
-can't be found on Upfluence, and — either in the same window or via a teammate
-follow-up already in the thread — the customer provides the existing Upfluence
-profile URL (`https://software.upfluence.co/irm/influencers/{id}`) and the
-creator's current social URL to merge it with. A teammate note pinning down the
-profile ID and social URL (like the fallback in 2a) counts as having the data even
-if the customer never typed the profile URL themselves.
+**Window — separate from the Type 1/Type 2 window above, computed independently,
+once per day:** since yesterday's Mexico-leg run (yesterday 3:58pm Mexico City
+time, UTC-6 fixed, no DST) until now — a rolling 24h window. Display label if
+referenced: "since yesterday 4pm Mexico". This is intentionally wider than the
+main Mexico-leg window so this case only needs one pass per day.
 
-For each Type 3 case found:
-1. Pull the contact's email and Upfluence User ID from the conversation's contact
-   info (`email`, `external_id`).
-2. Pull the company/team name from the conversation's company info for the ticket
-   title.
-3. File a Linear issue immediately (don't wait for a separate step or batch it):
+**Detection:** within that window, look for a CUSTOMER message referencing an
+existing Upfluence profile link of the form
+`https://software.upfluence.co/irm/influencers/{id}` that the client is asking to
+merge with other creator/social link(s) they've provided (in that same message or
+elsewhere in the same in-window exchange). Recognize this by the shape of the
+conversation, not a keyword — the client is pointing at an existing (typically
+blank) Upfluence profile to combine with new accounts, not just submitting fresh
+social links for a new creator entry.
+
+**Notes fallback:** a teammate note (team-only, not customer-visible) can supply
+either piece of data exactly as if the customer had sent it:
+- If the customer's in-window message(s) give the merge-target social link(s) but
+  NOT the `software.upfluence.co` profile link itself, check the conversation's
+  internal notes for a team-provided profile link before ruling this case out.
+- If the customer's in-window message says a profile is blank/can't be found but
+  gives no social link, and a note supplies the replacement social URL(s), use the
+  note's set per 2a's logic.
+- Only skip 2b entirely for a given creator if neither the customer's message nor a
+  note contains a `software.upfluence.co` profile link, or neither contains a
+  replacement social link.
+
+For each Type 3 case found (this is "Type 3" in the Slack summary):
+1. Do NOT add a row for this creator to the Type 1 CSV — this case is routed to
+   Support via a Linear ticket instead of the merge script.
+2. Pull the contact's email from the conversation's contact info. Pull the
+   Upfluence User ID from the contact's custom attributes (`external_id`); if none
+   is present, fall back to the Intercom contact ID and label it
+   "(Intercom contact ID — verify)" in the ticket.
+3. Pull the company/team name from the conversation's company info, abbreviated,
+   for the ticket title — mirror LIB-952's title pattern
+   (https://linear.app/upfluence/issue/LIB-952/merge-blank-profile-tla).
+4. File a Linear issue immediately via `mcp__Linear__save_issue` (don't wait for a
+   separate step or batch it) — do not check Linear for existing/duplicate issues
+   first, this fallback is the only process filing these tickets:
    - Team: Support (`3f272a17-cc3b-4e90-b74d-16fac7701c18`)
-   - Title: `Merge blank profile - {Company name}`
+   - Title: `Merge blank profile - {short client/company identifier}`
    - Labels: `ICP`, `Service`
    - Priority: High
    - Assignee: none (unassigned)
-   - State: Triage (not Backlog)
-   - Description, mirroring this exact shape:
+   - State: **Triage** — set this explicitly. Leaving the issue merely unassigned
+     does NOT route it to Triage on its own (confirmed: it defaults to Backlog) —
+     the state must be set.
+   - Description, mirroring LIB-952's exact shape (one numbered sub-item per
+     additional social link if more than one was provided):
      ```
      ## Description
 
-     Client is asking us to merge a blank creator profile with their new social media account:
+     Client is asking us to merge a blank creator profile with their new social media account(s):
 
-     1. Blank profile: [{profile_url}]({profile_url}) → merge with: [{social_url}]({social_url})
+     1. Blank profile: [{profile_url}]({profile_url}) → merge with:
+        1. [{social_url_1}]({social_url_1})
+        2. [{social_url_2}]({social_url_2})
+        (one numbered sub-item per additional link provided)
 
      ## Account information
 
      * Email: {email}
      * User ID: {user_id}
      ```
-   - Attach/link the Intercom conversation URL to the issue.
-4. This conversation counts as "touched" for the 1a scope check and belongs in the
-   Slack "touched" list, but it does NOT go into either CSV — it produces a Linear
-   ticket, not a CSV row.
-5. In the Slack summary (section 8), add one line per Type 3 case:
-   `Type 3 (blank profile): {Contact name} → {Linear issue ID}` linking the issue ID
-   to its Linear URL.
+   - Attach/link the Intercom conversation URL to the issue via
+     `mcp__Linear__create_attachment` (or the `links` field on `save_issue`):
+     `https://app.intercom.com/a/apps/k6viw85x/conversations/{conversation_id}`.
+5. This conversation counts as "touched" for the 1a scope check and belongs in the
+   Slack "touched" list, but it does NOT go into either CSV.
+6. The `mcp__Linear__save_issue`/`create_attachment` calls in this section may
+   require manual approval each time (no "always allow" set up yet) — this is
+   expected. Do NOT let waiting on that approval delay or block the main Slack
+   summary in section 8; that summary must go out first, independently. Track each
+   ticket created this run (issue identifier + issue URL) to report per section 8b
+   once approved/created.
 
 ## 3. Type 1 extraction rules
 
@@ -208,33 +252,65 @@ Upload each CSV (combined Type 1, plus one per Type 2 ticket) into the "Merge
 files" Drive folder, folder ID `1QLkaORi9cB8TWeRh02qgjYd87ecXERgS`. Get each file's
 shareable view URL (`https://drive.google.com/file/d/FILE_ID/view`).
 
-## 8. Post to Slack
+## 8. Post to Slack — main summary (send immediately, do NOT wait on Linear)
 
-Post to **#merge-automation** (channel ID `C0BJJFZLRA6`) in this exact format:
+As soon as Type 1/Type 2 processing and the Drive uploads in section 7 are done,
+post to **#merge-automation** (channel ID `C0BJJFZLRA6`) in this exact format. Do
+NOT wait for section 2b's Linear ticket creation/approval before sending this — if
+this run found any Type 3 cases, still send this message first, without their
+tickets confirmed; report those separately per 8b.
 
 ```
-_Merge profiles export ({leg label}) — {window start} → {actual run time} {weekday} {date}_
+**_{leg label}_** → from {window start}
 Type 1 (links): {N} conversations → {M} creators → [merge_{date}.csv](drive_link)
 Type 2 (files): {N} file from {contact name} → reviewed & reformatted → [merge_{contact}_{date}.csv](drive_link)
-Type 3 (blank profile): {contact name} → [{Linear issue ID}](linear_link)
-⚠️ Flags:
+Type 3: waiting for approval
+:warning: Flags:
 - {Contact name} sent a {platform} link — needs follow up
 - {Contact name}'s file had unreadable format ({format}) — skipped
 ```
 
-- Title line italicized. `{leg label}` = "Mexico 4 PM Run" or "Lyon 4 PM Run".
-  `{window start}` = the display label above (label only — math is the real anchor).
-  `{actual run time} {weekday} {date}` = the real current time/day/date, pulled live,
-  never hardcoded.
+- Title line: only `{leg label}` is bold AND italicized (`**_{leg label}_**`).
+  Follow it with plain text ` → from {window start}` — a literal arrow, not a dash.
+  No parentheses around the leg label. `{leg label}` = "Mexico 4 PM Run" or "Lyon 4
+  PM Run" per step 0. `{window start}` = the display label from the Window section
+  above (label only — math is the real anchor). Do NOT include the actual run
+  time, weekday, or date in the title line.
 - Include a Type 1 line only if Type 1 tickets exist; one Type 2 line per Type 2
-  ticket only if any exist; one Type 3 line per Type 3 case only if any exist.
-- If flags exist, list them under `⚠️ Flags:`. If none:
-  `⚠️ No flags gathered in this attempt` (italicized).
+  ticket only if any exist.
+- Include the line `Type 3: waiting for approval` only if section 2b found at
+  least one blank-profile case this run (Mexico-leg only, never on Lyon-leg).
+  Omit entirely if section 2b found zero cases.
+- If flags exist, list them under `:warning: Flags:` exactly as above — this emoji
+  appears ONLY when at least one real flag exists. If none, do NOT use any emoji;
+  instead add a single italicized line: `_No flags gathered in this attempt_`.
 - End with an italicized line: `_Don't forget to add notes in tickets:_` followed by
   one markdown link per conversation actually in-scope per 1a (not every conversation
   the search returned): `[Contact Name](https://app.intercom.com/a/apps/k6viw85x/inbox/conversation/{conversation_id})`.
 - If no matching conversations survive the 1a scope check, post just the title line
   followed by: `no conversations found`.
+
+## 8b. Post Type 3 follow-up — separate message, after Linear tickets are created (Mexico leg only)
+
+Only relevant on a Mexico-leg run where section 2b found at least one blank-profile
+case (i.e. the main message in section 8 included the "Type 3: waiting for
+approval" line). After the Linear ticket(s) for those cases have actually been
+created and confirmed (i.e. after getting past any manual approval step), post a
+SECOND, separate message to the same **#merge-automation** channel containing ONLY
+this one line — nothing else, no title, no other type lines, no flags:
+
+```
+Follow up — Type 3 (blank profile): {N} created → [{issue identifier 1}]({issue url 1}), [{issue identifier 2}]({issue url 2})
+```
+
+The "Follow up —" prefix is required, exactly as shown, so it's unambiguous this
+message resolves the earlier "waiting for approval" line rather than being a new,
+unrelated post. `{N}` = count of tickets created this run; follow it with a
+markdown link per ticket, comma-separated if more than one. Do not fold this into
+the section 8 message — it must be its own separate post so the main summary is
+never held up waiting on Linear approval. Skip this section entirely (post
+nothing) if section 2b found zero blank-profile cases this run, or if this is a
+Lyon-leg run.
 
 Note: Intercom notes on processed conversations are added manually by the team — do
 not attempt to add them as part of this run.
@@ -243,9 +319,13 @@ not attempt to add them as part of this run.
 
 The trigger's stored prompt should be minimal — a pointer, not a copy of this file:
 
-> Run the Merge Profiles export automation. Read and follow `AUTOMATION.md` in the
-> root of the `merge-profiles-export` repo before doing anything else.
+> Run the "Merge Profiles" export from Intercom to Upfluence. Read and follow
+> `AUTOMATION.md` in the root of the `merge-profiles-export` repo before doing
+> anything else — it is the source of truth for this automation. Do not rely on
+> memory of past runs' instructions; always re-read the file fresh, since it is
+> updated independently via git commits.
 
-Schedule: weekdays, two anchors — Lyon 3:50pm local (13:50 UTC on CEST, 14:50 UTC on
-CET) and Mexico 3:50pm fixed (21:50 UTC, no DST). Update the Lyon-leg hour manually
-in the trigger UI when Lyon crosses a DST boundary (late March / late October).
+Schedule: weekdays, one cron covering both anchors — `58 13,21 * * 1-5` (13:58 UTC
+Lyon leg on CEST, shifts to 14:58 on CET; 21:58 UTC Mexico leg, fixed, no DST).
+Update the Lyon-leg hour manually in the trigger UI when Lyon crosses a DST
+boundary (late March / late October).
