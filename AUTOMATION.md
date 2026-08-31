@@ -281,9 +281,11 @@ Type 3: waiting for approval
 - Include the line `Type 3: waiting for approval` only if section 2b found at
   least one blank-profile case this run (Mexico-leg only, never on Lyon-leg).
   Omit entirely if section 2b found zero cases.
-- If flags exist, list them under `:warning: Flags:` exactly as above — this emoji
-  appears ONLY when at least one real flag exists. If none, do NOT use any emoji;
-  instead add a single italicized line: `_No flags gathered in this attempt_`.
+- Include the `:warning: Flags:` section, with the list beneath it exactly as
+  above, ONLY when at least one real flag exists this run. If there are no
+  flags, omit the entire Flags section — no heading, no emoji, and no "no
+  flags" line of any kind. The section should simply not appear at all when
+  nothing was flagged.
 - End with an italicized line: `_Don't forget to add notes in tickets:_` followed by
   one markdown link per conversation actually in-scope per 1a (not every conversation
   the search returned): `[Contact Name](https://app.intercom.com/a/apps/k6viw85x/inbox/conversation/{conversation_id})`.
