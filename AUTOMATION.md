@@ -163,6 +163,13 @@ either piece of data exactly as if the customer had sent it:
 - Only skip 2b entirely for a given creator if neither the customer's message nor a
   note contains a `software.upfluence.co` profile link, or neither contains a
   replacement social link.
+- Notes can also be the ONLY source of a case: always scan the conversation's
+  internal notes directly for a complete blank-profile-plus-social-link pairing,
+  not just as a gap-filler for something the customer already raised. A teammate
+  may have researched and staged one or more full pairings in a note that the
+  customer never mentioned at all in-window (e.g. after an earlier out-of-window
+  request). Any such note-only pairing counts as its own Type 3 case, detected and
+  filed exactly like a customer-raised one.
 
 **Multiple blank profiles in one conversation:** a single conversation can raise
 more than one distinct blank-profile merge (e.g. a client lists three different
