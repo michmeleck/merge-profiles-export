@@ -164,6 +164,17 @@ either piece of data exactly as if the customer had sent it:
   note contains a `software.upfluence.co` profile link, or neither contains a
   replacement social link.
 
+**Multiple blank profiles in one conversation:** a single conversation can raise
+more than one distinct blank-profile merge (e.g. a client lists three different
+creators, each with their own blank `software.upfluence.co` profile and their own
+replacement social link(s)). Each distinct blank-profile URL is its OWN separate
+Type 3 case — do not bundle multiple different profiles into a single ticket's
+description. This is a different axis from a single profile having multiple
+replacement social links (that stays one case, one ticket, with a numbered
+sub-item per link, per the description template below). Identify cases by
+distinct profile URL, not by conversation: one conversation can produce zero, one,
+or several Type 3 cases, each filed as its own Linear issue per the steps below.
+
 For each Type 3 case found (this is "Type 3" in the Slack summary):
 1. Do NOT add a row for this creator to the Type 1 CSV — this case is routed to
    Support via a Linear ticket instead of the merge script.
