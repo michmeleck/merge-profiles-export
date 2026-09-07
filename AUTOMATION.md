@@ -282,7 +282,7 @@ tickets confirmed; report those separately per 8b.
 **_{leg label}_** → from {window start}
 Type 1 (links): {N} conversations → {M} creators → [merge_{date}.csv](drive_link)
 Type 2 (files): {N} file from {contact name} → reviewed & reformatted → [merge_{contact}_{date}.csv](drive_link)
-Type 3: waiting for approval
+Type 3 (blank profile): _Linear_ ticket pending approval
 :warning: Flags:
 - {Contact name} sent a {platform} link — needs follow up
 - {Contact name}'s file had unreadable format ({format}) — skipped
@@ -296,9 +296,11 @@ Type 3: waiting for approval
   time, weekday, or date in the title line.
 - Include a Type 1 line only if Type 1 tickets exist; one Type 2 line per Type 2
   ticket only if any exist.
-- Include the line `Type 3: waiting for approval` only if section 2b found at
-  least one blank-profile case this run (Mexico-leg only, never on Lyon-leg).
-  Omit entirely if section 2b found zero cases.
+- Include the line `Type 3 (blank profile): _Linear_ ticket pending approval`
+  (with "Linear" italicized, matching the style of the Type 1/Type 2 lines
+  above) only if section 2b found at least one blank-profile case this run
+  (Mexico-leg only, never on Lyon-leg). Omit entirely if section 2b found zero
+  cases.
 - Include the `:warning: Flags:` section, with the list beneath it exactly as
   above, ONLY when at least one real flag exists this run. If there are no
   flags, omit the entire Flags section — no heading, no emoji, and no "no
