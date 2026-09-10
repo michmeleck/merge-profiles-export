@@ -163,6 +163,24 @@ either piece of data exactly as if the customer had sent it:
 - Only skip 2b entirely for a given creator if neither the customer's message nor a
   note contains a `software.upfluence.co` profile link, or neither contains a
   replacement social link.
+- Notes can also be the ONLY source of a case: always scan the conversation's
+  internal notes directly for a complete blank-profile-plus-social-link pairing,
+  not just as a gap-filler for something the customer already raised. A teammate
+  may have researched and staged one or more full pairings in a note that the
+  customer never mentioned at all in-window (e.g. after an earlier out-of-window
+  request). Any such note-only pairing counts as its own Type 3 case, detected and
+  filed exactly like a customer-raised one.
+
+**Multiple blank profiles in one conversation:** a single conversation can raise
+more than one distinct blank-profile merge (e.g. a client lists three different
+creators, each with their own blank `software.upfluence.co` profile and their own
+replacement social link(s)). Each distinct blank-profile URL is its OWN separate
+Type 3 case — do not bundle multiple different profiles into a single ticket's
+description. This is a different axis from a single profile having multiple
+replacement social links (that stays one case, one ticket, with a numbered
+sub-item per link, per the description template below). Identify cases by
+distinct profile URL, not by conversation: one conversation can produce zero, one,
+or several Type 3 cases, each filed as its own Linear issue per the steps below.
 
 For each Type 3 case found (this is "Type 3" in the Slack summary):
 1. Do NOT add a row for this creator to the Type 1 CSV — this case is routed to
@@ -264,7 +282,7 @@ tickets confirmed; report those separately per 8b.
 **_{leg label}_** → from {window start}
 Type 1 (links): {N} conversations → {M} creators → [merge_{date}.csv](drive_link)
 Type 2 (files): {N} file from {contact name} → reviewed & reformatted → [merge_{contact}_{date}.csv](drive_link)
-Type 3: waiting for approval
+Type 3 (blank profile): _Linear_ ticket pending approval
 :warning: Flags:
 - {Contact name} sent a {platform} link — needs follow up
 - {Contact name}'s file had unreadable format ({format}) — skipped
@@ -278,9 +296,11 @@ Type 3: waiting for approval
   time, weekday, or date in the title line.
 - Include a Type 1 line only if Type 1 tickets exist; one Type 2 line per Type 2
   ticket only if any exist.
-- Include the line `Type 3: waiting for approval` only if section 2b found at
-  least one blank-profile case this run (Mexico-leg only, never on Lyon-leg).
-  Omit entirely if section 2b found zero cases.
+- Include the line `Type 3 (blank profile): _Linear_ ticket pending approval`
+  (with "Linear" italicized, matching the style of the Type 1/Type 2 lines
+  above) only if section 2b found at least one blank-profile case this run
+  (Mexico-leg only, never on Lyon-leg). Omit entirely if section 2b found zero
+  cases.
 - Include the `:warning: Flags:` section, with the list beneath it exactly as
   above, ONLY when at least one real flag exists this run. If there are no
   flags, omit the entire Flags section — no heading, no emoji, and no "no
