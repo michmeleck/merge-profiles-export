@@ -51,13 +51,16 @@ Never call `search_conversations` with only `team_assignee_id`/`state` and no
 `tag_ids` — that returns hundreds of unrelated conversations and forces an oversized
 dump into a background agent for no reason.
 
-**Pre-filter using the search results before calling `get_conversation` at all.**
-Each search result already includes `statistics.last_contact_reply_at`. Use that to
-discard any conversation whose last customer message falls outside this run's
-window — do not spend a `get_conversation` call on it. This is the single biggest
-lever for keeping the run cheap: `get_conversation` returns full conversation
-history (sometimes weeks of it) and is expensive to read; only call it on
-conversations that already look in-window from the search metadata.
+**Pre-filter using the search results before calling `get_conversation` at all —
+but anchor on `updated_at`, not `last_contact_reply_at` alone.** Each search
+result includes both. `last_contact_reply_at` only reflects the customer; it does
+NOT bump when a teammate adds an internal note, so filtering on it alone can skip a
+conversation before its content is ever read — the exact failure mode 1a(b) exists
+to prevent, just one step earlier. `updated_at` bumps on notes, tags, and snoozes
+too, so use `updated_at` to decide whether to spend a `get_conversation` call.
+This is still the single biggest lever for keeping the run cheap: `get_conversation`
+returns full conversation history (sometimes weeks of it) and is expensive to read;
+only skip it for conversations whose `updated_at` is outside this run's window.
 
 Once you have the matching in-window IDs, call `get_conversation` on each
 individually — this is required to see internal notes and full message bodies,
@@ -81,14 +84,32 @@ Instead:
 
 ## 1a. Scope check — surfaced ≠ touched
 
-A "Merge profiles"-tagged conversation whose last customer message falls in the
-window still needs its content checked before counting as this run's work. Only
-treat it as active if the in-window customer message(s) actually relate to
-submitting/referencing merge-profile data for a creator (new links, a new file, or
-a creator mentioned with zero links — 2a's fallback still handles that case). Pure
+A "Merge profiles"-tagged conversation still needs its content checked before
+counting as this run's work — do not decide inclusion from the customer's
+last-message timestamp alone. Treat a conversation as active for this run if
+EITHER:
+
+(a) an in-window **customer** message actually relates to submitting/referencing
+    merge-profile data for a creator (new links, a new file, or a creator
+    mentioned with zero links — 2a's fallback still handles that case); OR
+(b) an in-window **internal note** (team-only) contains supported-platform URLs or
+    a `software.upfluence.co` profile link for a creator — this counts as active
+    work on its own, even if the customer's message(s) in this same window are
+    unrelated or there are none at all. Anchor this check to the *note's own*
+    `created_at` against the window, not the customer message's timestamp.
+
+If neither (a) nor (b) holds — e.g. the in-window customer message(s) are pure
 status chatter ("any update?", "thanks") or an unrelated issue on the same
-historically-tagged thread does NOT count — do not extract data, do not flag it, do
-not list it in the Slack "touched" line.
+historically-tagged thread, and no note in that window carries new mergeable data —
+do not extract data, do not flag it, do not list it in the Slack "touched" line.
+
+**Why (b) exists:** on 2026-09-10 a teammate staged a full link set for two
+creators in an internal note (added ~15:00–15:24 UTC on 2026-09-09), which fell
+inside the *prior* Mexico-leg window (13:58–21:58 UTC), but no customer message
+landed in that same window to anchor it. Customer-message-only windowing missed it
+completely, and it wasn't caught until a human found it manually. Rule (b) closes
+that gap: a note is now a valid anchor in its own right, not just a supplement to
+an in-window customer message.
 
 ## Window definitions
 
@@ -126,6 +147,12 @@ internal note with URLs for that creator:
 - Customer message has a partial set (e.g. one platform), and a note has a more
   complete set for the same creator → use the note's set, don't merge with the
   partial message, don't flag "only one link."
+- Notes can also be the ONLY source of a case — don't require the customer to have
+  referenced the creator in-window at all. If an internal note added within this
+  run's window stages a complete (or partial) set of supported-platform URLs for a
+  creator, even one the customer never mentioned in this window (or mentioned only
+  in an earlier run's window), treat it as new work for this run per section 3,
+  anchored to the note's own `created_at` against the window — see 1a(b).
 - No matching note → default handling: zero links referenced → no CSV row, still
   list conversation in "touched"; one link with no more-complete note → flag
   "only one link sent — follow-up needed" per section 6.
