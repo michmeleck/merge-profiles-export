@@ -201,9 +201,15 @@ For each Type 3 case found (this is "Type 3" in the Slack summary):
 3. Pull the company/team name from the conversation's company info, abbreviated,
    for the ticket title — mirror LIB-952's title pattern
    (https://linear.app/upfluence/issue/LIB-952/merge-blank-profile-tla).
-4. File a Linear issue immediately via `mcp__Linear__save_issue` (don't wait for a
-   separate step or batch it) — do not check Linear for existing/duplicate issues
-   first, this fallback is the only process filing these tickets:
+4. Do NOT call `mcp__Linear__save_issue` or `mcp__Linear__create_attachment` —
+   confirmed (2026-09-10) that both return `No such tool available` in this
+   execution environment. They exist in the connector but are set to
+   "ask for confirmation," and this session type has no channel to satisfy that
+   ask — it's not a pending-approval state, the call fails outright, every time,
+   with nothing to wait on. Do not attempt the calls, do not treat a failure here
+   as retryable, and do not let this block anything else in the run.
+   Instead, prepare the complete ticket content below for a human to paste into
+   Linear by hand — this is now the deliverable for Type 3, reported per 8b:
    - Team: Support (`3f272a17-cc3b-4e90-b74d-16fac7701c18`)
    - Title: `Merge blank profile - {short client/company identifier}`
    - Labels: `ICP`, `Service`
@@ -229,17 +235,14 @@ For each Type 3 case found (this is "Type 3" in the Slack summary):
      * Email: {email}
      * User ID: {user_id}
      ```
-   - Attach/link the Intercom conversation URL to the issue via
-     `mcp__Linear__create_attachment` (or the `links` field on `save_issue`):
-     `https://app.intercom.com/a/apps/k6viw85x/conversations/{conversation_id}`.
+   - Conversation link to attach (a teammate adds this manually when creating the
+     issue): `https://app.intercom.com/a/apps/k6viw85x/conversations/{conversation_id}`.
 5. This conversation counts as "touched" for the 1a scope check and belongs in the
    Slack "touched" list, but it does NOT go into either CSV.
-6. The `mcp__Linear__save_issue`/`create_attachment` calls in this section may
-   require manual approval each time (no "always allow" set up yet) — this is
-   expected. Do NOT let waiting on that approval delay or block the main Slack
-   summary in section 8; that summary must go out first, independently. Track each
-   ticket created this run (issue identifier + issue URL) to report per section 8b
-   once approved/created.
+6. Track the fully-formatted content for each case (title, labels, priority,
+   description, conversation link) to report per section 8b. Nothing here is
+   "pending approval" anymore — there's no tool call in flight to wait on — so 8b
+   can go out in the same run as section 8, not as a later follow-up.
 
 ## 3. Type 1 extraction rules
 
@@ -282,16 +285,16 @@ shareable view URL (`https://drive.google.com/file/d/FILE_ID/view`).
 ## 8. Post to Slack — main summary (send immediately, do NOT wait on Linear)
 
 As soon as Type 1/Type 2 processing and the Drive uploads in section 7 are done,
-post to **#merge-automation** (channel ID `C0BJJFZLRA6`) in this exact format. Do
-NOT wait for section 2b's Linear ticket creation/approval before sending this — if
-this run found any Type 3 cases, still send this message first, without their
-tickets confirmed; report those separately per 8b.
+post to **#merge-automation** (channel ID `C0BJJFZLRA6`) in this exact format.
+Section 2b no longer calls a tool that could hang or need approval, so there's
+nothing to wait on — this message and 8b's follow-up can both go out in the same
+run, back to back.
 
 ```
 **_{leg label}_** → from {window start}
 Type 1 (links): {N} conversations → {M} creators → [merge_{date}.csv](drive_link)
 Type 2 (files): {N} file from {contact name} → reviewed & reformatted → [merge_{contact}_{date}.csv](drive_link)
-Type 3: waiting for approval
+Type 3 (blank profile): {N} case(s) — manual Linear ticket, see next message
 :warning: Flags:
 - {Contact name} sent a {platform} link — needs follow up
 - {Contact name}'s file had unreadable format ({format}) — skipped
@@ -305,9 +308,9 @@ Type 3: waiting for approval
   time, weekday, or date in the title line.
 - Include a Type 1 line only if Type 1 tickets exist; one Type 2 line per Type 2
   ticket only if any exist.
-- Include the line `Type 3: waiting for approval` only if section 2b found at
-  least one blank-profile case this run (Mexico-leg only, never on Lyon-leg).
-  Omit entirely if section 2b found zero cases.
+- Include the `Type 3 (blank profile): {N} case(s) — manual Linear ticket, see next message`
+  line only if section 2b found at least one blank-profile case this run
+  (Mexico-leg only, never on Lyon-leg). Omit entirely if section 2b found zero cases.
 - Include the `:warning: Flags:` section, with the list beneath it exactly as
   above, ONLY when at least one real flag exists this run. If there are no
   flags, omit the entire Flags section — no heading, no emoji, and no "no
@@ -319,27 +322,45 @@ Type 3: waiting for approval
 - If no matching conversations survive the 1a scope check, post just the title line
   followed by: `no conversations found`.
 
-## 8b. Post Type 3 follow-up — separate message, after Linear tickets are created (Mexico leg only)
+## 8b. Post Type 3 manual-ticket content — separate message, same run (Mexico leg only)
 
 Only relevant on a Mexico-leg run where section 2b found at least one blank-profile
-case (i.e. the main message in section 8 included the "Type 3: waiting for
-approval" line). After the Linear ticket(s) for those cases have actually been
-created and confirmed (i.e. after getting past any manual approval step), post a
-SECOND, separate message to the same **#merge-automation** channel containing ONLY
-this one line — nothing else, no title, no other type lines, no flags:
+case. Immediately after posting section 8's summary (no waiting on anything), post
+a SECOND, separate message to the same **#merge-automation** channel with the
+ready-to-paste content for each case, so a teammate can create the Linear issue(s)
+by hand in under a minute:
 
 ```
-Follow up — Type 3 (blank profile): {N} created → [{issue identifier 1}]({issue url 1}), [{issue identifier 2}]({issue url 2})
+Type 3 (blank profile) — {N} case(s), paste into Linear manually:
+
+**Case 1 — {short client/company identifier}**
+Team: Support · Labels: ICP, Service · Priority: High · State: Triage
+Title: Merge blank profile - {short client/company identifier}
+Description:
+​```
+## Description
+
+Client is asking us to merge a blank creator profile with their new social media account(s):
+
+1. Blank profile: [{profile_url}]({profile_url}) → merge with:
+   1. [{social_url_1}]({social_url_1})
+
+## Account information
+
+* Email: {email}
+* User ID: {user_id}
+​```
+Attach: https://app.intercom.com/a/apps/k6viw85x/conversations/{conversation_id}
+
+(repeat as **Case 2**, **Case 3**, etc. for each additional case this run)
 ```
 
-The "Follow up —" prefix is required, exactly as shown, so it's unambiguous this
-message resolves the earlier "waiting for approval" line rather than being a new,
-unrelated post. `{N}` = count of tickets created this run; follow it with a
-markdown link per ticket, comma-separated if more than one. Do not fold this into
-the section 8 message — it must be its own separate post so the main summary is
-never held up waiting on Linear approval. Skip this section entirely (post
-nothing) if section 2b found zero blank-profile cases this run, or if this is a
-Lyon-leg run.
+`{N}` = count of cases found this run. One `Case` block per distinct blank-profile
+case per section 2b (not per conversation — a single conversation can produce more
+than one). Skip this section entirely (post nothing) if section 2b found zero
+blank-profile cases this run, or if this is a Lyon-leg run. Keep this as its own
+message rather than folding it into section 8 — the main summary should stay
+short and scannable; the paste-ready content is bulkier and belongs separately.
 
 Note: Intercom notes on processed conversations are added manually by the team — do
 not attempt to add them as part of this run.
