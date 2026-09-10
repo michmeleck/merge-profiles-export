@@ -51,13 +51,17 @@ Never call `search_conversations` with only `team_assignee_id`/`state` and no
 `tag_ids` — that returns hundreds of unrelated conversations and forces an oversized
 dump into a background agent for no reason.
 
-**Pre-filter using the search results before calling `get_conversation` at all.**
-Each search result already includes `statistics.last_contact_reply_at`. Use that to
-discard any conversation whose last customer message falls outside this run's
-window — do not spend a `get_conversation` call on it. This is the single biggest
-lever for keeping the run cheap: `get_conversation` returns full conversation
-history (sometimes weeks of it) and is expensive to read; only call it on
-conversations that already look in-window from the search metadata.
+**Pre-filter using the search results before calling `get_conversation` at all —
+but anchor on `updated_at`, not `last_contact_reply_at` alone.** Each search
+result includes both. `last_contact_reply_at` only reflects the customer; it does
+NOT bump when a teammate adds an internal note, so filtering on it alone can skip a
+conversation before its content is ever read — the exact failure mode 1a(b) below
+exists to prevent, just one step earlier. `updated_at` bumps on notes, tags, and
+snoozes too, so use `updated_at` to decide whether a conversation is worth reading
+in full. This is still the single biggest lever for keeping the run cheap:
+`get_conversation` returns full conversation history (sometimes weeks of it) and
+is expensive to read; only skip it for conversations whose `updated_at` is outside
+this run's window.
 
 Once you have the matching in-window IDs, call `get_conversation` on each
 individually — this is required to see internal notes and full message bodies,
@@ -81,14 +85,32 @@ Instead:
 
 ## 1a. Scope check — surfaced ≠ touched
 
-A "Merge profiles"-tagged conversation whose last customer message falls in the
-window still needs its content checked before counting as this run's work. Only
-treat it as active if the in-window customer message(s) actually relate to
-submitting/referencing merge-profile data for a creator (new links, a new file, or
-a creator mentioned with zero links — 2a's fallback still handles that case). Pure
+A "Merge profiles"-tagged conversation still needs its content checked before
+counting as this run's work — do not decide inclusion from the customer's
+last-message timestamp alone. Treat a conversation as active for this run if
+EITHER:
+
+(a) an in-window **customer** message actually relates to submitting/referencing
+    merge-profile data for a creator (new links, a new file, or a creator
+    mentioned with zero links — 2a's fallback still handles that case); OR
+(b) an in-window **internal note** (team-only) contains supported-platform URLs or
+    a `software.upfluence.co` profile link for a creator — this counts as active
+    work on its own, even if the customer's message(s) in this same window are
+    unrelated or there are none at all. Anchor this check to the *note's own*
+    `created_at` against the window, not the customer message's timestamp.
+
+If neither (a) nor (b) holds — e.g. the in-window customer message(s) are pure
 status chatter ("any update?", "thanks") or an unrelated issue on the same
-historically-tagged thread does NOT count — do not extract data, do not flag it, do
-not list it in the Slack "touched" line.
+historically-tagged thread, and no note in that window carries new mergeable data —
+do not extract data, do not flag it, do not list it in the Slack "touched" line.
+
+**Why (b) exists:** on 2026-09-10 a teammate staged a full link set for two
+creators in an internal note (added ~15:00–15:24 UTC on 2026-09-09), which fell
+inside the *prior* Mexico-leg window (13:58–21:58 UTC), but no customer message
+landed in that same window to anchor it. Customer-message-only windowing missed it
+completely, and it wasn't caught until a human found it manually. Rule (b) closes
+that gap: a note is now a valid anchor in its own right, not just a supplement to
+an in-window customer message.
 
 ## Window definitions
 
@@ -126,6 +148,12 @@ internal note with URLs for that creator:
 - Customer message has a partial set (e.g. one platform), and a note has a more
   complete set for the same creator → use the note's set, don't merge with the
   partial message, don't flag "only one link."
+- Notes can also be the ONLY source of a case — don't require the customer to have
+  referenced the creator in-window at all. If an internal note added within this
+  run's window stages a complete (or partial) set of supported-platform URLs for a
+  creator, even one the customer never mentioned in this window (or mentioned only
+  in an earlier run's window), treat it as new work for this run per section 3,
+  anchored to the note's own `created_at` against the window — see 1a(b).
 - No matching note → default handling: zero links referenced → no CSV row, still
   list conversation in "touched"; one link with no more-complete note → flag
   "only one link sent — follow-up needed" per section 6.
@@ -192,17 +220,24 @@ For each Type 3 case found (this is "Type 3" in the Slack summary):
 3. Pull the company/team name from the conversation's company info, abbreviated,
    for the ticket title — mirror LIB-952's title pattern
    (https://linear.app/upfluence/issue/LIB-952/merge-blank-profile-tla).
-4. File a Linear issue immediately via `mcp__Linear__save_issue` (don't wait for a
-   separate step or batch it) — do not check Linear for existing/duplicate issues
-   first, this fallback is the only process filing these tickets:
+4. Do NOT call `mcp__Linear__save_issue` or `mcp__Linear__create_attachment` —
+   confirmed (2026-09-10) that both return `No such tool available` in this
+   execution environment. They exist in the connector but are set to "ask for
+   confirmation," and this session type has no channel to satisfy that ask — it's
+   not a pending-approval state, the call fails outright, every time, with nothing
+   to wait on. Do not attempt the calls, do not treat a failure here as retryable,
+   and do not let this block anything else in the run. Instead, prepare the
+   complete ticket content below for a human to paste into Linear by hand — this
+   is now the deliverable for Type 3, reported per section 8b:
    - Team: Support (`3f272a17-cc3b-4e90-b74d-16fac7701c18`)
-   - Title: `Merge blank profile - {short client/company identifier}`
+   - Title: `Merge blank profile - {short client/company identifier}` — mirror
+     LIB-952's title pattern (an abbreviation of the client's company/agency name;
+     https://linear.app/upfluence/issue/LIB-952/merge-blank-profile-tla).
    - Labels: `ICP`, `Service`
    - Priority: High
-   - Assignee: none (unassigned)
-   - State: **Triage** — set this explicitly. Leaving the issue merely unassigned
-     does NOT route it to Triage on its own (confirmed: it defaults to Backlog) —
-     the state must be set.
+   - Assignee: none (unassigned; State should be set to Triage explicitly when a
+     teammate creates it — leaving it merely unassigned does not route it to
+     Triage on its own, it defaults to Backlog)
    - Description, mirroring LIB-952's exact shape (one numbered sub-item per
      additional social link if more than one was provided):
      ```
@@ -220,17 +255,14 @@ For each Type 3 case found (this is "Type 3" in the Slack summary):
      * Email: {email}
      * User ID: {user_id}
      ```
-   - Attach/link the Intercom conversation URL to the issue via
-     `mcp__Linear__create_attachment` (or the `links` field on `save_issue`):
-     `https://app.intercom.com/a/apps/k6viw85x/conversations/{conversation_id}`.
+   - Conversation link to attach (a teammate adds this manually when creating the
+     issue): `https://app.intercom.com/a/apps/k6viw85x/conversations/{conversation_id}`.
 5. This conversation counts as "touched" for the 1a scope check and belongs in the
    Slack "touched" list, but it does NOT go into either CSV.
-6. The `mcp__Linear__save_issue`/`create_attachment` calls in this section may
-   require manual approval each time (no "always allow" set up yet) — this is
-   expected. Do NOT let waiting on that approval delay or block the main Slack
-   summary in section 8; that summary must go out first, independently. Track each
-   ticket created this run (issue identifier + issue URL) to report per section 8b
-   once approved/created.
+6. Track the fully-formatted content for each case (title, labels, priority,
+   description, conversation link) to report in Slack per section 8b. Nothing here
+   is "pending approval" — there's no tool call in flight to wait on — so 8b goes
+   out in the same run as section 8, immediately after it.
 
 ## 3. Type 1 extraction rules
 
@@ -270,19 +302,19 @@ Upload each CSV (combined Type 1, plus one per Type 2 ticket) into the "Merge
 files" Drive folder, folder ID `1QLkaORi9cB8TWeRh02qgjYd87ecXERgS`. Get each file's
 shareable view URL (`https://drive.google.com/file/d/FILE_ID/view`).
 
-## 8. Post to Slack — main summary (send immediately, do NOT wait on Linear)
+## 8. Post to Slack — main summary
 
 As soon as Type 1/Type 2 processing and the Drive uploads in section 7 are done,
-post to **#merge-automation** (channel ID `C0BJJFZLRA6`) in this exact format. Do
-NOT wait for section 2b's Linear ticket creation/approval before sending this — if
-this run found any Type 3 cases, still send this message first, without their
-tickets confirmed; report those separately per 8b.
+post to **#merge-automation** (channel ID `C0BJJFZLRA6`) in this exact format.
+Section 2b no longer calls a tool that could hang or need approval, so there's
+nothing to wait on — this message and 8b's follow-up (if any Type 3 cases exist)
+both go out in the same run, back to back.
 
 ```
 **_{leg label}_** → from {window start}
 Type 1 (links): {N} conversations → {M} creators → [merge_{date}.csv](drive_link)
 Type 2 (files): {N} file from {contact name} → reviewed & reformatted → [merge_{contact}_{date}.csv](drive_link)
-Type 3 (blank profile): _Linear_ ticket pending approval
+Type 3 (blank profile): {N} case(s) — manual Linear ticket, see next message
 :warning: Flags:
 - {Contact name} sent a {platform} link — needs follow up
 - {Contact name}'s file had unreadable format ({format}) — skipped
@@ -296,10 +328,9 @@ Type 3 (blank profile): _Linear_ ticket pending approval
   time, weekday, or date in the title line.
 - Include a Type 1 line only if Type 1 tickets exist; one Type 2 line per Type 2
   ticket only if any exist.
-- Include the line `Type 3 (blank profile): _Linear_ ticket pending approval`
-  (with "Linear" italicized, matching the style of the Type 1/Type 2 lines
-  above) only if section 2b found at least one blank-profile case this run
-  (Mexico-leg only, never on Lyon-leg). Omit entirely if section 2b found zero
+- Include the line `Type 3 (blank profile): {N} case(s) — manual Linear ticket,
+  see next message` only if section 2b found at least one blank-profile case this
+  run (Mexico-leg only, never on Lyon-leg). Omit entirely if section 2b found zero
   cases.
 - Include the `:warning: Flags:` section, with the list beneath it exactly as
   above, ONLY when at least one real flag exists this run. If there are no
@@ -312,27 +343,41 @@ Type 3 (blank profile): _Linear_ ticket pending approval
 - If no matching conversations survive the 1a scope check, post just the title line
   followed by: `no conversations found`.
 
-## 8b. Post Type 3 follow-up — separate message, after Linear tickets are created (Mexico leg only)
+## 8b. Post Type 3 manual-ticket content — separate message, same run (Mexico leg only)
 
 Only relevant on a Mexico-leg run where section 2b found at least one blank-profile
-case (i.e. the main message in section 8 included the "Type 3: waiting for
-approval" line). After the Linear ticket(s) for those cases have actually been
-created and confirmed (i.e. after getting past any manual approval step), post a
-SECOND, separate message to the same **#merge-automation** channel containing ONLY
-this one line — nothing else, no title, no other type lines, no flags:
+case (i.e. the main message in section 8 included the "manual Linear ticket, see
+next message" line). Immediately after posting section 8's summary — no waiting on
+anything — post a SECOND, separate message to the same **#merge-automation**
+channel (channel ID `C0BJJFZLRA6`) with the ready-to-paste content for each case,
+so a teammate can create the Linear issue(s) by hand in under a minute:
 
 ```
-Follow up — Type 3 (blank profile): {N} created → [{issue identifier 1}]({issue url 1}), [{issue identifier 2}]({issue url 2})
+Type 3 (blank profile) — {N} case(s), paste into Linear manually:
+
+**Case 1 — {short client/company identifier}**
+Team: Support · Labels: ICP, Service · Priority: High · State: Triage
+Title: Merge blank profile - {short client/company identifier}
+Description:
+Client is asking us to merge a blank creator profile with their new social media account(s):
+
+Blank profile: {profile_url} → merge with:
+{social_url_1}
+Account information
+Email: {email}
+User ID: {user_id}
+
+Attach: https://app.intercom.com/a/apps/k6viw85x/conversations/{conversation_id}
+
+(repeat as **Case 2**, **Case 3**, etc. for each additional case this run)
 ```
 
-The "Follow up —" prefix is required, exactly as shown, so it's unambiguous this
-message resolves the earlier "waiting for approval" line rather than being a new,
-unrelated post. `{N}` = count of tickets created this run; follow it with a
-markdown link per ticket, comma-separated if more than one. Do not fold this into
-the section 8 message — it must be its own separate post so the main summary is
-never held up waiting on Linear approval. Skip this section entirely (post
-nothing) if section 2b found zero blank-profile cases this run, or if this is a
-Lyon-leg run.
+`{N}` = count of cases found this run. One `Case` block per distinct blank-profile
+case per section 2b (not per conversation — a single conversation can produce more
+than one). Skip this section entirely (post nothing) if section 2b found zero
+blank-profile cases this run, or if this is a Lyon-leg run. Keep this as its own
+message rather than folding it into section 8 — the main summary should stay short
+and scannable; the paste-ready content is bulkier and belongs separately.
 
 Note: Intercom notes on processed conversations are added manually by the team — do
 not attempt to add them as part of this run.
